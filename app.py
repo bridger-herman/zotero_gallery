@@ -61,9 +61,9 @@ def extract_images():
     gallery_pub_ids = tuple(map(lambda i: i[0], cur.execute(f'SELECT itemID FROM collectionItems WHERE collectionID = "{gallery_id}"').fetchall()))
     gallery_pubs = cur.execute(f'SELECT itemID, key FROM items WHERE itemID IN {gallery_pub_ids}').fetchall()
 
-    for item_id, item_key in gallery_pubs:
+    for i, (item_id, item_key) in enumerate(gallery_pubs):
         bbt_key = next(filter(lambda e: e['itemKey'] == item_key, bibtex))['citekey']
-        print(bbt_key)
+        print('Extracting images for', bbt_key, '({:.0%} done)'.format((i + 1) / len(gallery_pubs)))
         attachments = cur.execute(f'SELECT itemID, contentType, path FROM itemAttachments WHERE parentItemID = {item_id}')
         for attachment_id, content_type, attachment_file in attachments.fetchall():
             # lookup canonical attachment ID in main `items` table
@@ -77,10 +77,7 @@ def extract_images():
                 new_pub = True
 
             # extract images from each publication based on its type
-            print(' ' * 3, content_type, attachment_path)
-            if new_pub and input('        New publication, extract images? (Y/n): ').lower() != 'n':
-                print(' ' * 7, 'Extracting Images...', end='')
-
+            if new_pub:
                 # Create db entry and folder to store images
                 cur_gallery.execute(f'INSERT INTO gallery (itemKey) VALUES ("{bbt_key}");')
                 con_gallery.commit()
@@ -90,7 +87,6 @@ def extract_images():
                 except KeyError:
                     print('Extractor not found for type', content_type)
 
-                print('done')
     print('Finished extracting images.')
     con_gallery.close()
 
