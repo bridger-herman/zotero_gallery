@@ -82,10 +82,14 @@ def extract_images():
                 print('done')
     print('Finished extracting images.')
 
+# At this point, source of truth is now the 'images' folder.
+def get_publications():
+    return os.listdir(OUTPUT_FOLDER)
 
 @app.route('/')
 def index():
-    return render_template('index.jinja')
+    publications = get_publications()
+    return render_template('index.html', publications=publications)
 
 if __name__ == '__main__':
     extract_images()
