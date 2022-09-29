@@ -10,11 +10,30 @@
 <body>
 <ul class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
     {% for publication, images in publications.items() %}
-    <li class="m-1 py-1 px-2 rounded-lg bg-gray-100">
-        <p class="text-center text-gray-900">{{ publication }}</p>
-        <img class="w-full aspect-video object-cover" src="{{ images[0] }}" alt="">
+    {% set img_index = preview_indices[publication] %}
+    {% set img = images[img_index] %}
+    <li class="relative m-1 py-1 px-2 rounded-lg bg-gray-100">
+        <p class="text-center text-sm text-gray-900">{{ publication }}</p>
+        <img class="w-full aspect-video object-cover" src="{{ img }}" alt="">
+        <div class="absolute bottom-0 w-full flex justify-between">
+            <button onclick="setImageIndex('{{ publication }}', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
+            <button onclick="setImageIndex('{{ publication }}', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
+        </div>
     </li>
     {% endfor %}
 </ul>
+
+<script>
+    function setImageIndex(publicationKey, increase) {
+        fetch(`/api/incrementImageIndex/${publicationKey}`, {
+            method: 'POST',
+            body: JSON.stringify({'increase': increase}),
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(_ => window.location.reload(false));
+    }
+</script>
 </body>
 </html>

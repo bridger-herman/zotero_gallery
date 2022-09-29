@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from flask import Flask, render_template
+from flask import Flask, render_template, g, request
 
 from extract_html_images import extract_html_images
 from extract_pdf_images import extract_pdf_images
@@ -41,6 +41,14 @@ bibtex = json.loads(json_bibtex)['data']
 con = sqlite3.connect('file:' + str(ZOTERO_DB) + '?mode=ro', uri=True)
 cur = con.cursor()
 
+# gallery sqlite
+con_gallery = sqlite3.connect('gallery.sqlite')
+cur_gallery = con_gallery.cursor()
+
+try:
+    cur_gallery.execute('CREATE TABLE gallery (itemKey TEXT PRIMARY KEY NOT NULL, imageIndex INT DEFAULT 0);')
+except sqlite3.OperationalError:
+    pass
 
 # Flask web app
 app = Flask(__name__, static_folder='images')
@@ -73,6 +81,9 @@ def extract_images():
             if new_pub and input('        New publication, extract images? (Y/n): ').lower() != 'n':
                 print(' ' * 7, 'Extracting Images...', end='')
 
+                # Create db entry and folder to store images
+                cur_gallery.execute(f'INSERT INTO gallery (itemKey) VALUES ("{bbt_key}");')
+                con_gallery.commit()
                 os.makedirs(image_path)
                 try:
                     EXTRACTORS[content_type](image_path, attachment_path)
@@ -81,6 +92,21 @@ def extract_images():
 
                 print('done')
     print('Finished extracting images.')
+    con_gallery.close()
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect('gallery.sqlite')
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    if exception is not None:
+        print(exception)
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
 # At this point, source of truth is now the 'images' folder.
 def get_pub_images():
@@ -94,11 +120,37 @@ def get_pub_images():
         publication_images[pub_key] = pub_list
     return publication_images
 
+def get_img_preview_indices():
+    pub_keys = get_db().cursor().execute('SELECT itemKey, imageIndex FROM gallery')
+    indices = {}
+    for key, index in pub_keys.fetchall():
+        indices[key] = index
+    return indices
+
+@app.route('/api/incrementImageIndex/<string:itemKey>', methods=['POST'])
+def increment_img_index(itemKey):
+    inc = request.json['increase']
+    value = 1 if inc else -1
+    current_value = get_img_preview_indices()[itemKey]
+    max_value = len(get_pub_images()[itemKey])
+    new_index = max(0, min(current_value + value, max_value))
+    db = get_db()
+    db.cursor().execute(f'UPDATE gallery SET imageIndex = {new_index} WHERE itemKey = "{itemKey}"')
+    db.commit()
+
+    out = f'Index for {itemKey} is now {new_index}'
+    print(out)
+    return out
+
 @app.route('/')
 def index():
     publications = get_pub_images()
-    return render_template('index.html', publications=publications)
+    preview_indices = get_img_preview_indices()
+    return render_template('index.html', publications=publications, preview_indices=preview_indices)
 
 if __name__ == '__main__':
     extract_images()
     app.run(FLASK_HOST, FLASK_PORT, debug=FLASK_DEBUG)
+
+    con.close()
+    con_bbt.close()
