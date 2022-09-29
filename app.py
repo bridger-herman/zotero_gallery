@@ -43,7 +43,7 @@ cur = con.cursor()
 
 
 # Flask web app
-app = Flask(__name__)
+app = Flask(__name__, static_folder='images')
 
 
 def extract_images():
@@ -83,12 +83,20 @@ def extract_images():
     print('Finished extracting images.')
 
 # At this point, source of truth is now the 'images' folder.
-def get_publications():
-    return os.listdir(OUTPUT_FOLDER)
+def get_pub_images():
+    pub_keys = os.listdir(OUTPUT_FOLDER)
+    publication_images = {}
+    for pub_key in pub_keys:
+        pub_folder = OUTPUT_FOLDER.joinpath(pub_key)
+        pub_list = []
+        for img in os.listdir(pub_folder):
+            pub_list.append(pub_folder.joinpath(img))
+        publication_images[pub_key] = pub_list
+    return publication_images
 
 @app.route('/')
 def index():
-    publications = get_publications()
+    publications = get_pub_images()
     return render_template('index.html', publications=publications)
 
 if __name__ == '__main__':
