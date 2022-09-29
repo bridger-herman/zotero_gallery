@@ -2,8 +2,9 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from extract_html_images import extract_html_images
+from flask import Flask, render_template
 
+from extract_html_images import extract_html_images
 from extract_pdf_images import extract_pdf_images
 
 ZOTERO_DATA_DIR = Path('~/Zotero').expanduser().resolve()
@@ -20,6 +21,10 @@ EXTRACTORS = {
     'text/html': extract_html_images,
 }
 
+FLASK_HOST = '127.0.0.1'
+FLASK_PORT = 5000
+FLASK_DEBUG = True
+
 if not OUTPUT_FOLDER.exists():
     os.makedirs(OUTPUT_FOLDER)
 
@@ -35,6 +40,10 @@ bibtex = json.loads(json_bibtex)['data']
 # main zotero cursor
 con = sqlite3.connect('file:' + str(ZOTERO_DB) + '?mode=ro', uri=True)
 cur = con.cursor()
+
+
+# Flask web app
+app = Flask(__name__)
 
 
 def extract_images():
@@ -71,6 +80,13 @@ def extract_images():
                     print('Extractor not found for type', content_type)
 
                 print('done')
+    print('Finished extracting images.')
+
+
+@app.route('/')
+def index():
+    return render_template('index.jinja')
 
 if __name__ == '__main__':
     extract_images()
+    app.run(FLASK_HOST, FLASK_PORT, debug=FLASK_DEBUG)
