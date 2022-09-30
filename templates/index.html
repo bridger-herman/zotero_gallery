@@ -8,12 +8,12 @@
     <title>Zotero Gallery</title>
 </head>
 <body>
-<ul class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
+<ul class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
     {% for publication, images in publications.items() %}
     {% set img_index = preview_indices[publication] %}
     {% set img = images[img_index] %}
     <li class="relative m-1 py-1 px-2 rounded-lg bg-gray-100">
-        <p class="text-center text-sm text-gray-900">{{ publication }}</p>
+        <p class="my-1 text-left text-clip overflow-hidden text-sm text-gray-900" title="{{ publication }}">{{ publication }}</p>
         <img class="w-full aspect-video object-cover" src="{{ img }}" alt="">
         <div class="absolute bottom-0 w-full flex justify-between">
             <button onclick="setImageIndex('{{ publication }}', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>

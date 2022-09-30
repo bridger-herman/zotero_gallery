@@ -37,7 +37,7 @@ def extract_html_images(imgdir, fname):
             except KeyError:
                 print('extract_html_images WARNING: unable to find type', file_type, '. Skipping.')
 
-            out_path = os.path.join(imgdir, filename)
+            out_path = os.path.join(imgdir, ''.join(map(lambda c: c if c.isalnum() or c in '.-_' else '_', filename)))
             with open(out_path, 'wb') as fout:
                 b64bytes = base64.b64decode(img[header_end + 1:])
                 fout.write(b64bytes)

@@ -79,8 +79,11 @@ def extract_images():
             # extract images from each publication based on its type
             if new_pub:
                 # Create db entry and folder to store images
-                cur_gallery.execute(f'INSERT INTO gallery (itemKey) VALUES ("{bbt_key}");')
-                con_gallery.commit()
+                try:
+                    cur_gallery.execute(f'INSERT INTO gallery (itemKey) VALUES ("{bbt_key}");')
+                    con_gallery.commit()
+                except sqlite3.IntegrityError:
+                    print(bbt_key, 'already exists in database')
                 os.makedirs(image_path)
                 try:
                     EXTRACTORS[content_type](image_path, attachment_path)
