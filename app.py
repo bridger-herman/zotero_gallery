@@ -3,6 +3,7 @@ import os
 import sqlite3
 from pathlib import Path
 from flask import Flask, render_template, g, request
+from livereload import Server
 
 from extract_html_images import extract_html_images
 from extract_pdf_images import extract_pdf_images
@@ -124,6 +125,7 @@ def close_connection(exception):
         if db is not None:
             db.close()
 
+# Flask Helpers
 # At this point, source of truth is now the 'images' folder.
 def get_pub_images():
     pub_keys = os.listdir(OUTPUT_FOLDER)
@@ -132,7 +134,7 @@ def get_pub_images():
         pub_folder = OUTPUT_FOLDER.joinpath(pub_key)
         pub_list = []
         for img in os.listdir(pub_folder):
-            pub_list.append(pub_folder.joinpath(img))
+            pub_list.append(pub_folder.joinpath(img).as_posix())
         publication_images[pub_key] = pub_list
     return publication_images
 
@@ -143,6 +145,7 @@ def get_img_preview_indices():
         indices[key] = index
     return indices
 
+# Flask Routes
 @app.route('/api/incrementImageIndex/<string:itemKey>', methods=['POST'])
 def increment_img_index(itemKey):
     inc = request.json['increase']
@@ -158,6 +161,10 @@ def increment_img_index(itemKey):
     print(out)
     return out
 
+@app.route('/api/getPublications')
+def get_publications():
+    return get_pub_images()
+
 @app.route('/')
 def index():
     publications = get_pub_images()
@@ -166,4 +173,8 @@ def index():
 
 if __name__ == '__main__':
     extract_images()
-    app.run(FLASK_HOST, FLASK_PORT, debug=FLASK_DEBUG)
+    app.debug = FLASK_DEBUG
+
+    server = Server(app.wsgi_app)
+    server.application(FLASK_PORT, FLASK_HOST)
+    server.serve()

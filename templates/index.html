@@ -6,22 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
     <title>Zotero Gallery</title>
+    <style>
+.template {
+    display: none;
+}
+    </style>
 </head>
 <body>
-<ul class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-    {% for publication, images in publications.items() %}
-    {% set img_index = preview_indices[publication] %}
-    {% set img = images[img_index] %}
+
+<ul id="pub-list" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+</ul>
+
+<!-- TEMPLATES -->
+<div class="template" id="pub-card">
     <li class="relative m-1 py-1 px-2 rounded-lg bg-gray-100">
-        <p class="my-1 text-left text-clip overflow-hidden text-sm text-gray-900" title="{{ publication }}">{{ publication }}</p>
-        <img class="w-full aspect-video object-cover" src="{{ img }}" alt="">
+        <p class="my-1 text-left text-clip overflow-hidden text-sm text-gray-900" title="__pubName__">__pubName__</p>
+        <img class="w-full aspect-video object-cover" src="__image__" alt="">
         <div class="absolute bottom-0 w-full flex justify-between">
             <button onclick="setImageIndex('{{ publication }}', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
             <button onclick="setImageIndex('{{ publication }}', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
         </div>
     </li>
-    {% endfor %}
-</ul>
+</div>
 
 <script>
     function setImageIndex(publicationKey, increase) {
@@ -34,6 +40,33 @@
         })
             .then(_ => window.location.reload(false));
     }
+
+    // Instantiate a template replacing all __variables__ in the template...
+    function instantiateTemplate(template, replaceVars) {
+        const clone = template.cloneNode(true);
+        for (let variable in replaceVars) {
+            clone.innerHTML = clone.innerHTML.replaceAll('__' + variable + '__', replaceVars[variable]);
+        }
+        return clone.childNodes[1];
+    }
+
+    async function index() {
+        const publications = await fetch('/api/getPublications')
+            .then(resp => resp.text())
+            .then(t => JSON.parse(t))
+
+        const pubListDom = document.getElementById('pub-list');
+        const pubCardTemplate = document.querySelector('.template#pub-card');
+        for (const pubName in publications) {
+            let instance = instantiateTemplate(pubCardTemplate, {
+                'pubName': pubName,
+                'image': publications[pubName][0],
+            });
+            pubListDom.append(instance);
+        }
+    }
+
+    window.onload = index;
 </script>
 </body>
 </html>
