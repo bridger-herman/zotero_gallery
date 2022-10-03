@@ -66,7 +66,10 @@ def extract_images():
             bbt_key = next(filter(lambda e: e['itemKey'] == item_key, bibtex))['citekey']
             print('Extracting images for', bbt_key, '({:.0%} done)'.format((i + 1) / len(gallery_pubs)))
             attachments = cur_zotero.execute(f'SELECT itemID, contentType, path FROM itemAttachments WHERE parentItemID = {item_id}')
-            for attachment_id, content_type, attachment_file in attachments.fetchall():
+            attachments_list = sorted(attachments.fetchall(), key=lambda c: c[1])
+            # print(list(map(lambda c: c[1], attachments_list)))
+            # input()
+            for attachment_id, content_type, attachment_file in attachments_list:
                 # lookup canonical attachment ID in main `items` table
                 attachment_key = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attachment_id}').fetchone()[0]
                 # input path
@@ -208,7 +211,7 @@ def get_img_preview_indices():
 def increment_img_index(itemKey, increase):
     value = 1 if increase > 0 else -1
     current_value = get_img_preview_indices()[itemKey]
-    max_value = len(get_publications()[itemKey])
+    max_value = len(get_publications()[itemKey]['images'])
     new_index = max(0, min(current_value + value, max_value))
     db = get_gallery_db()
     db.cursor().execute(f'UPDATE gallery SET previewImageIndex = {new_index} WHERE itemKey = "{itemKey}"')

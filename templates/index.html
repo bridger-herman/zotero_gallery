@@ -86,10 +86,10 @@
                 'pubName': pubName,
                 'image': pubData['images'][pubData['previewImageIndex']]
             });
-            let display = true;
+            let display = false;
             for (const tag in tagFilter) {
-                if (pubData.tags.indexOf(tag) >= 0 && !tagFilter[tag]) {
-                    display = false;
+                if (pubData.tags.indexOf(tag) >= 0 && tagFilter[tag]) {
+                    display = true;
                 }
             }
             if (display) {
