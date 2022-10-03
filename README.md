@@ -2,6 +2,8 @@
 
 A gallery tool to visually represent a [Zotero](https://www.zotero.org/) library.
 
+Tested with Zotero version 6.0.15
+
 
 ## Installation
 

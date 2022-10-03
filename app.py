@@ -52,7 +52,7 @@ def extract_images():
         con_gallery = get_gallery_db()
         cur_gallery = con_gallery.cursor()
         try:
-            cur_gallery.execute('CREATE TABLE gallery (itemKey TEXT PRIMARY KEY NOT NULL, imageIndex INT DEFAULT 0);')
+            cur_gallery.execute('CREATE TABLE gallery (itemKey TEXT PRIMARY KEY NOT NULL, previewImageIndex INT DEFAULT 0, zoteroItemID INT);')
         except sqlite3.OperationalError:
             pass
 
@@ -77,14 +77,16 @@ def extract_images():
                 if not image_path.exists():
                     new_pub = True
 
+                # Create db entry
+                try:
+                    cur_gallery.execute(f'INSERT INTO gallery (itemKey, zoteroItemID) VALUES ("{bbt_key}", {item_id});')
+                    con_gallery.commit()
+                except sqlite3.IntegrityError:
+                    print(bbt_key, 'already exists in database')
+
                 # extract images from each publication based on its type
                 if new_pub:
-                    # Create db entry and folder to store images
-                    try:
-                        cur_gallery.execute(f'INSERT INTO gallery (itemKey) VALUES ("{bbt_key}");')
-                        con_gallery.commit()
-                    except sqlite3.IntegrityError:
-                        print(bbt_key, 'already exists in database')
+                    # create folder to store images
                     os.makedirs(image_path)
                     try:
                         EXTRACTORS[content_type](image_path, attachment_path)
@@ -125,21 +127,77 @@ def close_connection(exception):
         if db is not None:
             db.close()
 
+
+# Get key:value pairs of tagID:tag
+def get_tags():
+    cur_zotero = get_zotero_db().cursor()
+
+    # Get tag list for helpfulness later
+    tags_res = cur_zotero.execute('SELECT * FROM tags')
+    return dict(tags_res.fetchall())
+
 # Flask Helpers
-# At this point, source of truth is now the 'images' folder.
-def get_pub_images():
+# Get all publications so we can display them on the page
+# - publication citation key (better bibtex)
+#   - zoteroItemID: int -- associated publication in the zotero database for this publication
+#   - images: list<str> -- list of all images associated with this publication. if images have been 'minified' already, this will only have one item.
+#   - previewImage: int -- index out of `images` to display for this publication's 'preview' on the gallery page
+#   - tags: list<str> -- list of zotero tags associated with this publication
+#   - info:
+#       - title: str -- full title of publication
+#       - authors: list<str> -- all authors in publication
+#       - date: <str> -- date of publication (usually just year...)
+#       - fileLink: <str> -- link to the local zotero file attachment where this pub can be found
+def get_publications():
+    # Set up databases
+    cur_gallery = get_gallery_db().cursor()
+    cur_zotero = get_zotero_db().cursor()
+
+    # Get tag list and field list for decoding tagIDs/fieldIDs later
+    tags = get_tags()
+    fields_res = cur_zotero.execute('SELECT fieldID, fieldName FROM fields')
+    fields = dict(fields_res.fetchall())
+
     pub_keys = os.listdir(OUTPUT_FOLDER)
-    publication_images = {}
+    publications = {}
     for pub_key in pub_keys:
+        pub_data = {}
+        # Query gallery db for information (`zoteroItemID`, `previewImageIndex`)
+        gallery_result = cur_gallery.execute(f'SELECT zoteroItemID, previewImageIndex FROM gallery WHERE itemKey = "{pub_key}"')
+        zotero_id, preview_index = gallery_result.fetchone()
+        pub_data['zoteroItemID'] = zotero_id
+        pub_data['previewImageIndex'] = preview_index
+
+        # Get `images` list
         pub_folder = OUTPUT_FOLDER.joinpath(pub_key)
-        pub_list = []
+        img_list = []
         for img in os.listdir(pub_folder):
-            pub_list.append(pub_folder.joinpath(img).as_posix())
-        publication_images[pub_key] = pub_list
-    return publication_images
+            img_list.append(pub_folder.joinpath(img).as_posix())
+        pub_data['images'] = img_list
+
+        # Look into zotero db for tag
+        tag_ids_res = cur_zotero.execute(f'SELECT tagID FROM itemTags WHERE itemID = {zotero_id}')
+        pub_tags = [tags[tid] for (tid,) in tag_ids_res.fetchall()]
+        pub_data['tags'] = pub_tags
+
+        # Look into zotero db for title, author, date, etc. info
+        fields_values = cur_zotero.execute(f'SELECT valueID, fieldID FROM itemData WHERE itemID = {zotero_id}')
+        value_id_to_field_id = dict(fields_values.fetchall())
+        values = cur_zotero.execute(f'''
+            SELECT itemDataValues.valueID, value FROM itemDataValues
+                INNER JOIN itemData ON itemDataValues.valueID = itemData.valueID AND itemData.itemID = {zotero_id}
+        ''')
+        value_id_to_value = dict(values.fetchall())
+
+        # field_name: field_value
+        pub_info = {fields[value_id_to_field_id[value_id]]: value for value_id, value in value_id_to_value.items()}
+        pub_data['info'] = pub_info
+
+        publications[pub_key] = pub_data
+    return publications
 
 def get_img_preview_indices():
-    pub_keys = get_gallery_db().cursor().execute('SELECT itemKey, imageIndex FROM gallery')
+    pub_keys = get_gallery_db().cursor().execute('SELECT itemKey, previewImageIndex FROM gallery')
     indices = {}
     for key, index in pub_keys.fetchall():
         indices[key] = index
@@ -151,10 +209,10 @@ def increment_img_index(itemKey):
     inc = request.json['increase']
     value = 1 if inc else -1
     current_value = get_img_preview_indices()[itemKey]
-    max_value = len(get_pub_images()[itemKey])
+    max_value = len(get_publications()[itemKey])
     new_index = max(0, min(current_value + value, max_value))
     db = get_gallery_db()
-    db.cursor().execute(f'UPDATE gallery SET imageIndex = {new_index} WHERE itemKey = "{itemKey}"')
+    db.cursor().execute(f'UPDATE gallery SET previewImageIndex = {new_index} WHERE itemKey = "{itemKey}"')
     db.commit()
 
     out = f'Index for {itemKey} is now {new_index}'
@@ -162,17 +220,18 @@ def increment_img_index(itemKey):
     return out
 
 @app.route('/api/getPublications')
-def get_publications():
-    return get_pub_images()
+def api_get_publications():
+    return get_publications()
 
 @app.route('/')
 def index():
-    publications = get_pub_images()
+    publications = get_publications()
     preview_indices = get_img_preview_indices()
     return render_template('index.html', publications=publications, preview_indices=preview_indices)
 
 if __name__ == '__main__':
     extract_images()
+
     app.debug = FLASK_DEBUG
 
     server = Server(app.wsgi_app)
