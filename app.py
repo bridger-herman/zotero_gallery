@@ -1,3 +1,4 @@
+import shutil
 import json
 import os
 import sqlite3
@@ -200,11 +201,15 @@ def get_publications():
         pub_data['info'] = pub_info
 
         # Gather attachment file path to open as file:/// URI in-browser
-        attachment_res = cur_zotero.execute(f'SELECT path, itemID FROM itemAttachments WHERE parentItemID = {zotero_id}')
-        first_attach_path, attach_id = attachment_res.fetchone()
-        zotero_key_res = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attach_id}')
-        (zotero_key, ) = zotero_key_res.fetchone()
-        pub_data['fileLink'] = zotero_key + '/' + first_attach_path.replace(STORAGE_DB, '')
+        try:
+            attachment_res = cur_zotero.execute(f'SELECT path, itemID FROM itemAttachments WHERE parentItemID = {zotero_id}')
+            first_attach_path, attach_id = attachment_res.fetchone()
+            zotero_key_res = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attach_id}')
+            (zotero_key, ) = zotero_key_res.fetchone()
+            pub_data['fileLink'] = zotero_key + '/' + first_attach_path.replace(STORAGE_DB, '')
+        except:
+            # Skip if no attachments
+            pass
 
         publications[pub_key] = pub_data
     return publications
@@ -245,7 +250,25 @@ def index():
     preview_indices = get_img_preview_indices()
     return render_template('index.html', publications=publications, preview_indices=preview_indices)
 
+def remove_entry(entry_key):
+    out_folder = OUTPUT_FOLDER.joinpath(entry_key)
+    if os.path.exists(out_folder):
+        shutil.rmtree(out_folder)
+        print('removed folder', out_folder)
+
+    with app.app_context():
+        con_gallery = get_gallery_db()
+        cur_gallery = con_gallery.cursor()
+        cur_gallery.execute(f'DELETE FROM gallery WHERE itemKey = "{entry_key}"')
+        con_gallery.commit()
+        print('removed entry', entry_key, 'from gallery database')
+
+
 if __name__ == '__main__':
+    # remove_entry('laidlawComparing2DVector2005')
+    # remove_entry('forsbergComparing3DVector2009')
+    # exit(0)
+
     extract_images()
 
     app.debug = FLASK_DEBUG

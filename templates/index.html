@@ -19,6 +19,7 @@
     </ul>
 
     <div id="control-panel" class="fixed top-0 right-0 w-[20%] h-full pl-1 bg-gray-300">
+        <h2>Filter by tag...</h2>
         <button onclick="selectAllTags(true)" class="bg-gray-100">Select All</button>
         <button onclick="selectAllTags(false)" class="bg-gray-100">Deselect All</button>
         <ul id="tag-list" class="flex flex-col">
@@ -79,6 +80,8 @@
     }
 
     function updateGallery() {
+        let selectedTags = Object.keys(tagFilter).filter(k => tagFilter[k]);
+        console.log(selectedTags);
         const pubListDom = document.getElementById('pub-list');
         const pubCardTemplate = document.querySelector('.template#pub-card');
         pubListDom.innerHTML = '';
@@ -89,10 +92,11 @@
                 'image': pubData['images'][pubData['previewImageIndex']],
                 'fileLink': '/api/getAttachment/' + pubData['fileLink']
             });
-            let display = false;
-            for (const tag in tagFilter) {
-                if (pubData.tags.indexOf(tag) >= 0 && tagFilter[tag]) {
-                    display = true;
+
+            let display = true;
+            for (const tag of selectedTags) {
+                if (pubData['tags'].indexOf(tag) < 0) {
+                    display = false;
                 }
             }
             if (display) {
@@ -117,9 +121,11 @@
             tagFilter = {};
         }
 
-        for (const tag of allTags) {
+        let sortedTags = Array.from(allTags);
+        sortedTags.sort();
+        for (const tag of sortedTags) {
             if (typeof(tagFilter[tag]) === 'undefined')
-                tagFilter[tag] = true;
+                tagFilter[tag] = false;
 
             let instance = instantiateTemplate(tagTemplate, {
                 'tagName': tag
