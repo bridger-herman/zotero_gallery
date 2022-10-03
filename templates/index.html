@@ -23,20 +23,19 @@
         <p class="my-1 text-left text-clip overflow-hidden text-sm text-gray-900" title="__pubName__">__pubName__</p>
         <img class="w-full aspect-video object-cover" src="__image__" alt="">
         <div class="absolute bottom-0 w-full flex justify-between">
-            <button onclick="setImageIndex('{{ publication }}', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
-            <button onclick="setImageIndex('{{ publication }}', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
+            <button onclick="setImageIndex('__pubName__', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
+            <button onclick="setImageIndex('__pubName__', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
         </div>
     </li>
 </div>
 
 <script>
+    var publications;
+
     function setImageIndex(publicationKey, increase) {
-        fetch(`/api/incrementImageIndex/${publicationKey}`, {
+        let inc = increase ? 1 : 0;
+        fetch(`/api/incrementImageIndex/${publicationKey}/${inc}`, {
             method: 'POST',
-            body: JSON.stringify({'increase': increase}),
-            headers: {
-                'Content-Type': 'application/json'
-            }
         })
             .then(_ => window.location.reload(false));
     }
@@ -51,16 +50,17 @@
     }
 
     async function index() {
-        const publications = await fetch('/api/getPublications')
+        publications = await fetch('/api/getPublications')
             .then(resp => resp.text())
             .then(t => JSON.parse(t))
 
         const pubListDom = document.getElementById('pub-list');
         const pubCardTemplate = document.querySelector('.template#pub-card');
         for (const pubName in publications) {
+            let pubData = publications[pubName];
             let instance = instantiateTemplate(pubCardTemplate, {
                 'pubName': pubName,
-                'image': publications[pubName][0],
+                'image': pubData['images'][pubData['previewImageIndex']]
             });
             pubListDom.append(instance);
         }

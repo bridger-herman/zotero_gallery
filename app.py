@@ -204,10 +204,9 @@ def get_img_preview_indices():
     return indices
 
 # Flask Routes
-@app.route('/api/incrementImageIndex/<string:itemKey>', methods=['POST'])
-def increment_img_index(itemKey):
-    inc = request.json['increase']
-    value = 1 if inc else -1
+@app.route('/api/incrementImageIndex/<string:itemKey>/<int:increase>', methods=['POST'])
+def increment_img_index(itemKey, increase):
+    value = 1 if increase > 0 else -1
     current_value = get_img_preview_indices()[itemKey]
     max_value = len(get_publications()[itemKey])
     new_index = max(0, min(current_value + value, max_value))
