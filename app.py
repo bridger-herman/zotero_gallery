@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from flask import Flask, render_template, g, request
+from flask import Flask, render_template, g, request, send_from_directory
 from livereload import Server
 
 from extract_html_images import extract_html_images
@@ -73,7 +73,7 @@ def extract_images():
                 # lookup canonical attachment ID in main `items` table
                 attachment_key = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attachment_id}').fetchone()[0]
                 # input path
-                attachment_path = STORAGE_DIR.joinpath(attachment_key).joinpath(str(attachment_file).replace(STORAGE_DB, ''))
+                attachment_path = get_attachment_path(attachment_key, attachment_file)
                 # output path
                 image_path = OUTPUT_FOLDER.joinpath(bbt_key)
                 new_pub = False
@@ -130,6 +130,9 @@ def close_connection(exception):
         if db is not None:
             db.close()
 
+# Construct the path of a Zotero attachment
+def get_attachment_path(attachment_key, attachment_file):
+    return STORAGE_DIR.joinpath(attachment_key).joinpath(str(attachment_file).replace(STORAGE_DB, ''))
 
 # Get key:value pairs of tagID:tag
 def get_tags():
@@ -146,11 +149,11 @@ def get_tags():
 #   - images: list<str> -- list of all images associated with this publication. if images have been 'minified' already, this will only have one item.
 #   - previewImage: int -- index out of `images` to display for this publication's 'preview' on the gallery page
 #   - tags: list<str> -- list of zotero tags associated with this publication
+#   - fileLink: <str> -- link to the local zotero file attachment where this pub can be found
 #   - info:
 #       - title: str -- full title of publication
 #       - authors: list<str> -- all authors in publication
 #       - date: <str> -- date of publication (usually just year...)
-#       - fileLink: <str> -- link to the local zotero file attachment where this pub can be found
 def get_publications():
     # Set up databases
     cur_gallery = get_gallery_db().cursor()
@@ -196,6 +199,13 @@ def get_publications():
         pub_info = {fields[value_id_to_field_id[value_id]]: value for value_id, value in value_id_to_value.items()}
         pub_data['info'] = pub_info
 
+        # Gather attachment file path to open as file:/// URI in-browser
+        attachment_res = cur_zotero.execute(f'SELECT path, itemID FROM itemAttachments WHERE parentItemID = {zotero_id}')
+        first_attach_path, attach_id = attachment_res.fetchone()
+        zotero_key_res = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attach_id}')
+        (zotero_key, ) = zotero_key_res.fetchone()
+        pub_data['fileLink'] = zotero_key + '/' + first_attach_path.replace(STORAGE_DB, '')
+
         publications[pub_key] = pub_data
     return publications
 
@@ -224,6 +234,10 @@ def increment_img_index(itemKey, increase):
 @app.route('/api/getPublications')
 def api_get_publications():
     return get_publications()
+
+@app.route('/api/getAttachment/<path:filename>')
+def get_zotero_attachment(filename):
+    return send_from_directory(STORAGE_DIR, filename)
 
 @app.route('/')
 def index():

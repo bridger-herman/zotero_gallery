@@ -30,7 +30,9 @@
 <div class="template" id="pub-card">
     <li class="relative m-1 py-1 px-2 rounded-lg bg-gray-100">
         <p class="my-1 text-left text-clip overflow-hidden text-sm text-gray-900" title="__pubName__">__pubName__</p>
-        <img class="w-full aspect-video object-cover" src="__image__" alt="">
+        <a href="__fileLink__">
+            <img class="w-full aspect-video object-cover" src="__image__" alt="">
+        </a>
         <div class="absolute bottom-0 w-full flex justify-between">
             <button onclick="setImageIndex('__pubName__', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
             <button onclick="setImageIndex('__pubName__', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
@@ -84,7 +86,8 @@
             let pubData = publications[pubName];
             let instance = instantiateTemplate(pubCardTemplate, {
                 'pubName': pubName,
-                'image': pubData['images'][pubData['previewImageIndex']]
+                'image': pubData['images'][pubData['previewImageIndex']],
+                'fileLink': '/api/getAttachment/' + pubData['fileLink']
             });
             let display = false;
             for (const tag in tagFilter) {
