@@ -63,30 +63,33 @@ def extract_images():
         gallery_pub_ids = tuple(map(lambda i: i[0], cur_zotero.execute(f'SELECT itemID FROM collectionItems WHERE collectionID = "{gallery_id}"').fetchall()))
         gallery_pubs = cur_zotero.execute(f'SELECT itemID, key FROM items WHERE itemID IN {gallery_pub_ids}').fetchall()
 
+        new_pubs = 0
         for i, (item_id, item_key) in enumerate(gallery_pubs):
             bbt_key = next(filter(lambda e: e['itemKey'] == item_key, bibtex))['citekey']
-            print('Extracting images for', bbt_key, '({:.0%} done)'.format((i + 1) / len(gallery_pubs)))
             attachments = cur_zotero.execute(f'SELECT itemID, contentType, path FROM itemAttachments WHERE parentItemID = {item_id}')
             attachments_list = sorted(attachments.fetchall(), key=lambda c: c[1])
-            # print(list(map(lambda c: c[1], attachments_list)))
-            # input()
+
+            # output path
+            image_path = OUTPUT_FOLDER.joinpath(bbt_key)
+            # check if publication output folder exists
+            new_pub = False
+            if not image_path.exists():
+                print('Found new publication', bbt_key, 'extracting images ({:.0%} done)'.format((i + 1) / len(gallery_pubs)))
+                new_pub = True
+                new_pubs += 1
+
             for attachment_id, content_type, attachment_file in attachments_list:
                 # lookup canonical attachment ID in main `items` table
                 attachment_key = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attachment_id}').fetchone()[0]
                 # input path
                 attachment_path = get_attachment_path(attachment_key, attachment_file)
-                # output path
-                image_path = OUTPUT_FOLDER.joinpath(bbt_key)
-                new_pub = False
-                if not image_path.exists():
-                    new_pub = True
-
                 # Create db entry
                 try:
                     cur_gallery.execute(f'INSERT INTO gallery (itemKey, zoteroItemID) VALUES ("{bbt_key}", {item_id});')
                     con_gallery.commit()
+                    print('Inserted key', bbt_key, 'into gallery database, zotero id', item_id)
                 except sqlite3.IntegrityError:
-                    print(bbt_key, 'already exists in database')
+                    pass
 
                 # extract images from each publication based on its type
                 if new_pub:
@@ -97,7 +100,7 @@ def extract_images():
                     except KeyError:
                         print('Extractor not found for type', content_type)
 
-        print('Finished extracting images.')
+        print('Finished extracting images ({} new publications found)'.format(new_pubs))
         con_gallery.close()
 
 # Database functions (internal gallery, zotero, and better bibtex)
