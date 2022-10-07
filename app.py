@@ -1,3 +1,4 @@
+import sys
 import shutil
 import json
 import os
@@ -267,15 +268,50 @@ def remove_entry(entry_key):
         print('removed entry', entry_key, 'from gallery database')
 
 
+def print_help():
+    app_help = '''
+usage: python3 ./app.py <options>
+
+options:
+run <debug>: run the gallery server (optionally in debug mode)
+extract:    extract images from any new publications in the Zotero database
+pack:       reduce every publication to a single selected image and create a zip file in the `data` folder containing all images.
+pull:       pull databases from Zotero and make a backup in case something goes wrong.
+push:       push databases to Zotero and make a backup in case something goes wrong.
+remove <entry_key>: remove the bibtex entry key from the database and images gallery
+'''
+    print(app_help)
+
 if __name__ == '__main__':
     # remove_entry('laidlawComparing2DVector2005')
     # remove_entry('forsbergComparing3DVector2009')
     # exit(0)
 
-    extract_images()
+    if len(sys.argv) == 1:
+        print_help()
+        exit(1)
 
-    app.debug = FLASK_DEBUG
+    elif 'extract' in sys.argv:
+        extract_images()
+        exit(0)
 
-    server = Server(app.wsgi_app)
-    server.application(FLASK_PORT, FLASK_HOST)
-    server.serve()
+    elif 'remove' in sys.argv:
+        if len(sys.argv) == 3:
+            remove_entry(sys.argv[2])
+            exit(0)
+        else:
+            print_help()
+            exit(1)
+
+    elif 'run' in sys.argv:
+        debug = 'debug' in sys.argv
+        app.debug = debug
+
+        if debug:
+            server = Server(app.wsgi_app)
+            server.application(FLASK_PORT, FLASK_HOST)
+            server.serve()
+        else:
+            app.run(FLASK_HOST, FLASK_PORT)
+    else:
+        print(f'command `${sys.argv[1]}` not implemented')
