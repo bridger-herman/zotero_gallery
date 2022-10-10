@@ -34,7 +34,7 @@ ZOTERO_GALLERY_COLLECTION_NAME = '_Gallery'
 PREVIEW_INDEX_PACKED = -1
 
 GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery.zip')
-SYNC_PUB_KEY = ''
+SYNC_PUB_TAG = 'z_Gallery_Sync_Placeholder'
 
 EXTRACTORS = {
     'application/pdf': extract_pdf_images,
@@ -64,16 +64,33 @@ def pull():
     # make backups
     zotero_bak = Path(str(ZOTERO_GALLERY_DB) + '.bak')
     bbt_bak = Path(str(BBT_GALLERY_DB) + '.bak')
+    gallery_db_bak = Path(str(GALLERY_DB) + '.bak')
+    gallery_zip_bak = Path(str(GALLERY_ZIP) + '.bak')
     if ZOTERO_GALLERY_DB.exists():
         shutil.copyfile(ZOTERO_GALLERY_DB, zotero_bak)
     if BBT_GALLERY_DB.exists():
         shutil.copyfile(BBT_GALLERY_DB, bbt_bak)
+    if GALLERY_DB.exists():
+        shutil.copyfile(GALLERY_DB, gallery_db_bak)
+    if GALLERY_ZIP.exists():
+        shutil.copyfile(GALLERY_ZIP, gallery_zip_bak)
     print('    - made backups')
 
     # then, make a copy of the Zotero databases in local data folder
     shutil.copyfile(ZOTERO_SRC_DB, ZOTERO_GALLERY_DB)
     shutil.copyfile(BBT_SRC_DB, BBT_GALLERY_DB)
     print('    - copied zotero database and better bibtex database')
+
+    # copy gallery database and gallery images
+    sync_paths = get_gallery_sync_attachment_paths()
+    shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
+    shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
+    print('    - copied gallery database and archive')
+
+    # extract/unpack gallery image archive
+    unpack()
+    print('    - extracted gallery archive')
+
 
 def push():
     '''
@@ -84,7 +101,46 @@ def push():
 
     Make a backup in case something goes wrong.
     '''
-    pass
+    # make backups
+    zotero_bak = Path(str(ZOTERO_SRC_DB) + '.gallery.bak')
+    bbt_bak = Path(str(BBT_SRC_DB) + '.gallery.bak')
+    if ZOTERO_SRC_DB.exists():
+        shutil.copyfile(ZOTERO_SRC_DB, zotero_bak)
+    if BBT_SRC_DB.exists():
+        shutil.copyfile(BBT_SRC_DB, bbt_bak)
+
+    pack()
+    print('    - packed gallery images into archive')
+
+    sync_paths = get_gallery_sync_attachment_paths()
+    shutil.copyfile(GALLERY_DB, sync_paths[GALLERY_DB.name])
+    shutil.copyfile(GALLERY_ZIP, sync_paths[GALLERY_ZIP.name])
+    print('    - copied gallery database and archive')
+
+def get_gallery_sync_attachment_paths():
+    # pack stuff up
+    with app.app_context():
+        cur_zotero = get_zotero_db().cursor()
+
+        # Get the publication gallery stuff is stored in
+        all_tags = get_tags()
+        tag_id, _sync_tag = next(filter(lambda p: p[1] == SYNC_PUB_TAG, all_tags.items()))
+        pub_id_res = cur_zotero.execute(f'SELECT itemID FROM itemTags WHERE tagID = {tag_id}')
+        (item_id, ) = pub_id_res.fetchone()
+
+        # Get attachments and verify they're all present
+        expected_attachment_names = [GALLERY_DB.name, GALLERY_ZIP.name]
+        attachs_res = cur_zotero.execute(f'SELECT itemID, contentType, path FROM itemAttachments WHERE parentItemID = {item_id}')
+        actual_attachments = {n: None for n in expected_attachment_names}
+        for attach_id, content_type, path in attachs_res.fetchall():
+            actual_filename = path.replace(STORAGE_DB, '')
+            if actual_filename in expected_attachment_names:
+                # lookup canonical attachment ID in main `items` table
+                attachment_key = cur_zotero.execute(f'SELECT key FROM items WHERE itemID = {attach_id}').fetchone()[0]
+                actual_attachments[actual_filename] = get_attachment_path(attachment_key, actual_filename)
+            else:
+                print('Warning: unexpected attachment ', actual_filename)
+        return actual_attachments
 
 def pack():
     '''
@@ -113,12 +169,16 @@ def pack():
 
         # get rid of superfluous publication images
         imgs_removed = 0
-        for pubKey in os.listdir(PUBS_FOLDER):
-            pub_path = PUBS_FOLDER.joinpath(pubKey)
+        for pub_key in os.listdir(PUBS_FOLDER):
+            pub_path = PUBS_FOLDER.joinpath(pub_key)
 
             # find actual image index and get nth image
-            res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemKey = "{pubKey}"')
-            (img_index, ) = res.fetchone()
+            res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemKey = "{pub_key}"')
+            try:
+                (img_index, ) = res.fetchone()
+            except TypeError:
+                print('Publication not found: ', pub_key, ', skipping')
+                continue
 
             # if <0 already, already packed...
             if img_index < 0:
@@ -129,7 +189,7 @@ def pack():
                 if i != img_index:
                     img_path = pub_path.joinpath(img)
                     os.unlink(img_path)
-                    cur_gallery.execute(f'UPDATE gallery SET previewImageIndex = {PREVIEW_INDEX_PACKED} WHERE itemKey = "{pubKey}"')
+                    cur_gallery.execute(f'UPDATE gallery SET previewImageIndex = {PREVIEW_INDEX_PACKED} WHERE itemKey = "{pub_key}"')
                     imgs_removed += 1
 
         con_gallery.commit()
@@ -139,17 +199,20 @@ def pack():
     z = zipfile.ZipFile(GALLERY_ZIP, 'w')
     print('    - generating zip file')
     all_pubs = os.listdir(PUBS_FOLDER)
-    for i, pubKey in enumerate(all_pubs):
+    for i, pub_key in enumerate(all_pubs):
         if i % (len(all_pubs) // 10) == 0:
             print('        ({:.0%} done)'.format(i / len(all_pubs)))
-        pub_path = PUBS_FOLDER.joinpath(pubKey)
+        pub_path = PUBS_FOLDER.joinpath(pub_key)
 
         all_imgs = list(sorted(os.listdir(pub_path)))
-        if len(all_imgs) != 1:
-            print(f'Warning: pub {pubKey} was improperly packed (has {len(all_imgs)} images). Using first image.')
-        img_name = all_imgs[0]
-        img_path = pub_path.joinpath(img_name)
-        z.write(img_path, pubKey + '/' + img_name)
+        if len(all_imgs) > 1:
+            print(f'Warning: pub {pub_key} was improperly packed (has {len(all_imgs)} images). Using first image.')
+        if len(all_imgs) > 0:
+            img_name = all_imgs[0]
+            img_path = pub_path.joinpath(img_name)
+            z.write(img_path, pub_key + '/' + img_name)
+        else:
+            print(f'Warning: pub {pub_key} was improperly packed (has no images). Skipping.')
 
 
 def unpack():
@@ -159,9 +222,12 @@ def unpack():
     print('Unpacking...')
     # unpack gallery.zip file into images publications folder
     z = zipfile.ZipFile(GALLERY_ZIP, 'r')
-    names = z.namelist()
+    names = set(z.namelist())
+    existing = {Path(pub_key).joinpath(img).as_posix() for pub_key in os.listdir(PUBS_FOLDER) for img in os.listdir(PUBS_FOLDER.joinpath(pub_key))}
+    difference = names - existing
+
     z.extractall(PUBS_FOLDER)
-    print(f'    - extracted {len(names)} files from gallery')
+    print(f'    - extracted {len(names)} files from gallery ({len(difference)} new)')
 
 def extract_images():
     '''
@@ -427,6 +493,10 @@ if __name__ == '__main__':
 
     elif 'pull' in sys.argv:
         pull()
+        exit(0)
+
+    elif 'push' in sys.argv:
+        push()
         exit(0)
 
     elif 'pack' in sys.argv:
