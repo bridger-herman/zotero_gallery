@@ -156,7 +156,12 @@ def unpack():
     '''
     Unpack a gallery.zip file into the images directory for publications
     '''
-    pass
+    print('Unpacking...')
+    # unpack gallery.zip file into images publications folder
+    z = zipfile.ZipFile(GALLERY_ZIP, 'r')
+    names = z.namelist()
+    z.extractall(PUBS_FOLDER)
+    print(f'    - extracted {len(names)} files from gallery')
 
 def extract_images():
     '''
@@ -406,6 +411,7 @@ pull:       pull databases from Zotero and make a backup in case something goes 
 push:       push databases to Zotero and make a backup in case something goes wrong.
 pack:       pack all images into a single zip file and get rid of all images
             that aren't the single one we're displaying on the gallery.
+unpack:     unpack gallery.zip file into the images folder
 remove <entry_key>: remove the bibtex entry key from the database and images gallery
 '''
     print(app_help)
@@ -425,6 +431,10 @@ if __name__ == '__main__':
 
     elif 'pack' in sys.argv:
         pack()
+        exit(0)
+
+    elif 'unpack' in sys.argv:
+        unpack()
         exit(0)
 
     elif 'extract' in sys.argv:
