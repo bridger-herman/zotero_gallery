@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from flask import Flask, render_template, g, request, send_from_directory
 from livereload import Server
+import zipfile
 
 from extract_html_images import extract_html_images
 from extract_pdf_images import extract_pdf_images
@@ -28,10 +29,11 @@ GALLERY_DB = GALLERY_DATA_DIR.joinpath('gallery.sqlite')
 STORAGE = 'storage/'
 STORAGE_DB = 'storage:'
 STORAGE_DIR = ZOTERO_DATA_DIR.joinpath(STORAGE)
-OUTPUT_FOLDER = Path('images')
+PUBS_FOLDER = Path('images')
 ZOTERO_GALLERY_COLLECTION_NAME = '_Gallery'
+PREVIEW_INDEX_PACKED = -1
 
-SYNC_GALLERY = GALLERY_DATA_DIR.joinpath('gallery.zip')
+GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery.zip')
 SYNC_PUB_KEY = ''
 
 EXTRACTORS = {
@@ -43,8 +45,8 @@ FLASK_HOST = '127.0.0.1'
 FLASK_PORT = 5000
 FLASK_DEBUG = True
 
-if not OUTPUT_FOLDER.exists():
-    os.makedirs(OUTPUT_FOLDER)
+if not PUBS_FOLDER.exists():
+    os.makedirs(PUBS_FOLDER)
 
 # Flask web app
 app = Flask(__name__, static_folder='images')
@@ -86,9 +88,49 @@ def push():
 
 def pack():
     '''
-    Reduce the number of extracted images in each publication directory to a single one
+    Reduce the number of extracted images in each publication directory to a
+    single one and update the zotero gallery database accordingly (specify -1
+    for every publication index to indicate that there's only ONE image and it's
+    no longer adjustable.)
+
+    Additionally, zip up all publication images into gallery.zip.
+
+    Make a backup database and gallery.zip before proceeding.
     '''
-    pass
+    print('Packing publication images...')
+    # make backups
+    gallery_db_bak = Path(str(GALLERY_DB) + '.bak')
+    gallery_zip_bak = Path(str(GALLERY_ZIP) + '.bak')
+    if GALLERY_DB.exists():
+        shutil.copyfile(GALLERY_DB, gallery_db_bak)
+    if GALLERY_ZIP.exists():
+        shutil.copyfile(GALLERY_ZIP, gallery_zip_bak)
+    print('    - made backups')
+
+    with app.app_context():
+        con_gallery = get_gallery_db()
+        cur_gallery = con_gallery.cursor()
+
+        # get rid of superfluous publication images
+        imgs_removed = 0
+        for pubKey in os.listdir(PUBS_FOLDER):
+            pub_path = PUBS_FOLDER.joinpath(pubKey)
+
+            # find actual image index and get nth image
+            res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemKey = "{pubKey}"')
+            (img_index, ) = res.fetchone()
+
+            all_imgs = list(sorted(os.listdir(pub_path)))
+            for i, img in enumerate(all_imgs):
+                if i != img_index:
+                    img_path = pub_path.joinpath(img)
+                    os.unlink(img_path)
+                    cur_gallery.execute(f'UPDATE gallery SET previewImageIndex = {PREVIEW_INDEX_PACKED} WHERE itemKey = "{pubKey}"')
+                    imgs_removed += 1
+
+        con_gallery.commit()
+    print(f'    - removed {imgs_removed} images')
+
 
 def unpack():
     '''
@@ -136,7 +178,7 @@ def extract_images():
             attachments_list = sorted(attachments.fetchall(), key=lambda c: c[1])
 
             # output path
-            image_path = OUTPUT_FOLDER.joinpath(bbt_key)
+            image_path = PUBS_FOLDER.joinpath(bbt_key)
             # check if publication output folder exists
             new_pub = False
             if not image_path.exists():
@@ -234,7 +276,7 @@ def get_publications():
     fields_res = cur_zotero.execute('SELECT fieldID, fieldName FROM fields')
     fields = dict(fields_res.fetchall())
 
-    pub_keys = os.listdir(OUTPUT_FOLDER)
+    pub_keys = os.listdir(PUBS_FOLDER)
     publications = {}
     for pub_key in pub_keys:
         pub_data = {}
@@ -245,9 +287,9 @@ def get_publications():
         pub_data['previewImageIndex'] = preview_index
 
         # Get `images` list
-        pub_folder = OUTPUT_FOLDER.joinpath(pub_key)
+        pub_folder = PUBS_FOLDER.joinpath(pub_key)
         img_list = []
-        for img in os.listdir(pub_folder):
+        for img in sorted(os.listdir(pub_folder)):
             img_list.append(pub_folder.joinpath(img).as_posix())
         pub_data['images'] = img_list
 
@@ -320,7 +362,7 @@ def index():
     return render_template('index.html', publications=publications, preview_indices=preview_indices)
 
 def remove_entry(entry_key):
-    out_folder = OUTPUT_FOLDER.joinpath(entry_key)
+    out_folder = PUBS_FOLDER.joinpath(entry_key)
     if os.path.exists(out_folder):
         shutil.rmtree(out_folder)
         print('removed folder', out_folder)
@@ -342,6 +384,8 @@ run <debug>: run the gallery server (optionally in debug mode)
 extract:    extract images from any new publications in the Zotero database
 pull:       pull databases from Zotero and make a backup in case something goes wrong.
 push:       push databases to Zotero and make a backup in case something goes wrong.
+pack:       pack all images into a single zip file and get rid of all images
+            that aren't the single one we're displaying on the gallery.
 remove <entry_key>: remove the bibtex entry key from the database and images gallery
 '''
     print(app_help)
@@ -357,6 +401,10 @@ if __name__ == '__main__':
 
     elif 'pull' in sys.argv:
         pull()
+        exit(0)
+
+    elif 'pack' in sys.argv:
+        pack()
         exit(0)
 
     elif 'extract' in sys.argv:

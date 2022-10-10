@@ -34,7 +34,7 @@
         <a href="__fileLink__">
             <img class="w-full aspect-video object-cover" src="__image__" alt="">
         </a>
-        <div class="absolute bottom-0 w-full flex justify-between">
+        <div class="__hideArrows__ absolute bottom-0 w-full flex justify-between">
             <button onclick="setImageIndex('__pubName__', false)" class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&lt;</button>
             <button onclick="setImageIndex('__pubName__', true) " class="opacity-10 hover:opacity-100 mx-1 px-1 text-center rounded-md bg-blue-200">&gt;</button>
         </div>
@@ -87,10 +87,13 @@
         pubListDom.innerHTML = '';
         for (const pubName in publications) {
             let pubData = publications[pubName];
+            // Hide arrows if preview image index < 0 (has been packed)
+            let imgIndex = pubData['previewImageIndex'] >= 0 ? pubData['previewImageIndex'] : 0;
             let instance = instantiateTemplate(pubCardTemplate, {
                 'pubName': pubName,
-                'image': pubData['images'][pubData['previewImageIndex']],
-                'fileLink': '/api/getAttachment/' + pubData['fileLink']
+                'image': pubData['images'][imgIndex],
+                'fileLink': '/api/getAttachment/' + pubData['fileLink'],
+                'hideArrows': pubData['previewImageIndex'] < 0 ? 'hidden' : '',
             });
 
             let display = true;
