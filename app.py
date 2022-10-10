@@ -120,6 +120,10 @@ def pack():
             res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemKey = "{pubKey}"')
             (img_index, ) = res.fetchone()
 
+            # if <0 already, already packed...
+            if img_index < 0:
+                continue
+
             all_imgs = list(sorted(os.listdir(pub_path)))
             for i, img in enumerate(all_imgs):
                 if i != img_index:
@@ -130,6 +134,22 @@ def pack():
 
         con_gallery.commit()
     print(f'    - removed {imgs_removed} images')
+
+    # rewrite zip file (copy all folders/single images in)
+    z = zipfile.ZipFile(GALLERY_ZIP, 'w')
+    print('    - generating zip file')
+    all_pubs = os.listdir(PUBS_FOLDER)
+    for i, pubKey in enumerate(all_pubs):
+        if i % (len(all_pubs) // 10) == 0:
+            print('        ({:.0%} done)'.format(i / len(all_pubs)))
+        pub_path = PUBS_FOLDER.joinpath(pubKey)
+
+        all_imgs = list(sorted(os.listdir(pub_path)))
+        if len(all_imgs) != 1:
+            print(f'Warning: pub {pubKey} was improperly packed (has {len(all_imgs)} images). Using first image.')
+        img_name = all_imgs[0]
+        img_path = pub_path.joinpath(img_name)
+        z.write(img_path, pubKey + '/' + img_name)
 
 
 def unpack():
