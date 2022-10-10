@@ -10,15 +10,29 @@ from livereload import Server
 from extract_html_images import extract_html_images
 from extract_pdf_images import extract_pdf_images
 
+GALLERY_DATA_DIR = Path('./data')
+if not GALLERY_DATA_DIR.exists():
+    os.makedirs(GALLERY_DATA_DIR)
+GALLERY_DATA_DIR = GALLERY_DATA_DIR.resolve()
+
 ZOTERO_DATA_DIR = Path('~/Zotero').expanduser().resolve()
-ZOTERO_DB = ZOTERO_DATA_DIR.joinpath('zotero.sqlite')
-BBT_DB = ZOTERO_DATA_DIR.joinpath('better-bibtex.sqlite')
-GALLERY_DB = Path('./gallery.sqlite')
+
+ZOTERO_DB_NAME = 'zotero.sqlite'
+BBT_DB_NAME = 'better-bibtex.sqlite'
+ZOTERO_SRC_DB = ZOTERO_DATA_DIR.joinpath(ZOTERO_DB_NAME)
+BBT_SRC_DB = ZOTERO_DATA_DIR.joinpath(BBT_DB_NAME)
+ZOTERO_GALLERY_DB = GALLERY_DATA_DIR.joinpath(ZOTERO_DB_NAME)
+BBT_GALLERY_DB = GALLERY_DATA_DIR.joinpath(BBT_DB_NAME)
+
+GALLERY_DB = GALLERY_DATA_DIR.joinpath('gallery.sqlite')
 STORAGE = 'storage/'
 STORAGE_DB = 'storage:'
 STORAGE_DIR = ZOTERO_DATA_DIR.joinpath(STORAGE)
 OUTPUT_FOLDER = Path('images')
 ZOTERO_GALLERY_COLLECTION_NAME = '_Gallery'
+
+SYNC_GALLERY = GALLERY_DATA_DIR.joinpath('gallery.zip')
+SYNC_PUB_KEY = ''
 
 EXTRACTORS = {
     'application/pdf': extract_pdf_images,
@@ -35,7 +49,58 @@ if not OUTPUT_FOLDER.exists():
 # Flask web app
 app = Flask(__name__, static_folder='images')
 
+def pull():
+    '''
+    Pull (make a copy of) the Zotero databases so we can run the gallery at the
+    same time as Zotero.
+
+    Additionally, unpack the gallery.zip file into the images dir.
+
+    Make a backup in case something goes wrong.
+    '''
+    print('Pulling...')
+    # make backups
+    zotero_bak = Path(str(ZOTERO_GALLERY_DB) + '.bak')
+    bbt_bak = Path(str(BBT_GALLERY_DB) + '.bak')
+    if ZOTERO_GALLERY_DB.exists():
+        shutil.copyfile(ZOTERO_GALLERY_DB, zotero_bak)
+    if BBT_GALLERY_DB.exists():
+        shutil.copyfile(BBT_GALLERY_DB, bbt_bak)
+    print('    - made backups')
+
+    # then, make a copy of the Zotero databases in local data folder
+    shutil.copyfile(ZOTERO_SRC_DB, ZOTERO_GALLERY_DB)
+    shutil.copyfile(BBT_SRC_DB, BBT_GALLERY_DB)
+    print('    - copied zotero database and better bibtex database')
+
+def push():
+    '''
+    Push (copy gallery.sqlite and gallery.zip to) zotero publication entry that
+    has an attachment storing these databases for easy syncing across devices.
+
+    Additionally, pack the publication gallery images and zip them up into gallery.zip.
+
+    Make a backup in case something goes wrong.
+    '''
+    pass
+
+def pack():
+    '''
+    Reduce the number of extracted images in each publication directory to a single one
+    '''
+    pass
+
+def unpack():
+    '''
+    Unpack a gallery.zip file into the images directory for publications
+    '''
+    pass
+
 def extract_images():
+    '''
+    Extract all images from every new publication in the Zotero database and
+    place all images in the images/* folder.
+    '''
     # Pretend to be a Flask app
     with app.app_context():
         # Set up Better BibTeX
@@ -116,14 +181,14 @@ def get_gallery_db():
 def get_zotero_db():
     db = getattr(g, 'zotero_db', None)
     if db is None:
-        g.zotero_db = sqlite3.connect('file:' + str(ZOTERO_DB) + '?mode=ro', uri=True)
+        g.zotero_db = sqlite3.connect('file:' + str(ZOTERO_GALLERY_DB) + '?mode=ro', uri=True)
     return g.zotero_db
 
 # Better BibTeX database
 def get_bbt_db():
     db = getattr(g, 'bbt_db', None)
     if db is None:
-        g.bbt_db = sqlite3.connect('file:' + str(BBT_DB) + '?mode=ro', uri=True)
+        g.bbt_db = sqlite3.connect('file:' + str(BBT_GALLERY_DB) + '?mode=ro', uri=True)
     return g.bbt_db
 
 @app.teardown_appcontext
@@ -275,7 +340,6 @@ usage: python3 ./app.py <options>
 options:
 run <debug>: run the gallery server (optionally in debug mode)
 extract:    extract images from any new publications in the Zotero database
-pack:       reduce every publication to a single selected image and create a zip file in the `data` folder containing all images.
 pull:       pull databases from Zotero and make a backup in case something goes wrong.
 push:       push databases to Zotero and make a backup in case something goes wrong.
 remove <entry_key>: remove the bibtex entry key from the database and images gallery
@@ -290,6 +354,10 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         print_help()
         exit(1)
+
+    elif 'pull' in sys.argv:
+        pull()
+        exit(0)
 
     elif 'extract' in sys.argv:
         extract_images()
