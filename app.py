@@ -83,13 +83,17 @@ def pull():
 
     # copy gallery database and gallery images
     sync_paths = get_gallery_sync_attachment_paths()
-    shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
-    shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
-    print('    - copied gallery database and archive')
+    if sync_paths is not None:
+        shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
+        shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
+        print('    - copied gallery database and archive')
 
-    # extract/unpack gallery image archive
-    unpack()
-    print('    - extracted gallery archive')
+        # extract/unpack gallery image archive
+        unpack()
+        print('    - extracted gallery archive')
+    else:
+        print('    - failed to copy gallery database and archive')
+        print('    - failed to extract gallery archive')
 
 
 def push():
@@ -113,9 +117,12 @@ def push():
     print('    - packed gallery images into archive')
 
     sync_paths = get_gallery_sync_attachment_paths()
-    shutil.copyfile(GALLERY_DB, sync_paths[GALLERY_DB.name])
-    shutil.copyfile(GALLERY_ZIP, sync_paths[GALLERY_ZIP.name])
-    print('    - copied gallery database and archive')
+    if sync_paths is not None:
+        shutil.copyfile(GALLERY_DB, sync_paths[GALLERY_DB.name])
+        shutil.copyfile(GALLERY_ZIP, sync_paths[GALLERY_ZIP.name])
+        print('    - copied gallery database and archive')
+    else:
+        print('    - failed copy database and archive')
 
 def get_gallery_sync_attachment_paths():
     # pack stuff up
@@ -124,7 +131,11 @@ def get_gallery_sync_attachment_paths():
 
         # Get the publication gallery stuff is stored in
         all_tags = get_tags()
-        tag_id, _sync_tag = next(filter(lambda p: p[1] == SYNC_PUB_TAG, all_tags.items()))
+        try:
+            tag_id, _sync_tag = next(filter(lambda p: p[1] == SYNC_PUB_TAG, all_tags.items()))
+        except StopIteration:
+            print('Gallery storage tag `{}` not found. Please tag a placeholder entry in Zotero.'.format(SYNC_PUB_TAG))
+            return None
         pub_id_res = cur_zotero.execute(f'SELECT itemID FROM itemTags WHERE tagID = {tag_id}')
         (item_id, ) = pub_id_res.fetchone()
 
@@ -200,7 +211,7 @@ def pack():
     print('    - generating zip file')
     all_pubs = os.listdir(PUBS_FOLDER)
     for i, pub_key in enumerate(all_pubs):
-        if i % (len(all_pubs) // 10) == 0:
+        if i % max(1, len(all_pubs) // 10) == 0:
             print('        ({:.0%} done)'.format(i / len(all_pubs)))
         pub_path = PUBS_FOLDER.joinpath(pub_key)
 
@@ -293,7 +304,8 @@ def extract_images():
                 # extract images from each publication based on its type
                 if new_pub:
                     # create folder to store images
-                    os.makedirs(image_path)
+                    if not image_path.exists():
+                        os.makedirs(image_path)
                     try:
                         EXTRACTORS[content_type](image_path, attachment_path)
                     except KeyError:
