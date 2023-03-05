@@ -30,7 +30,7 @@ STORAGE = 'storage/'
 STORAGE_DB = 'storage:'
 STORAGE_DIR = ZOTERO_DATA_DIR.joinpath(STORAGE)
 PUBS_FOLDER = Path('images')
-ZOTERO_GALLERY_COLLECTION_NAME = '_Gallery'
+ZOTERO_GALLERY_COLLECTION_NAME = '_GalleryTest'
 PREVIEW_INDEX_PACKED = -1
 
 GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery.zip')
@@ -51,7 +51,7 @@ if not PUBS_FOLDER.exists():
 # Flask web app
 app = Flask(__name__, static_folder='images')
 
-def pull():
+def pull(include_gallery_data=True):
     '''
     Pull (make a copy of) the Zotero databases so we can run the gallery at the
     same time as Zotero.
@@ -72,7 +72,7 @@ def pull():
         shutil.copyfile(BBT_GALLERY_DB, bbt_bak)
     if GALLERY_DB.exists():
         shutil.copyfile(GALLERY_DB, gallery_db_bak)
-    if GALLERY_ZIP.exists():
+    if GALLERY_ZIP.exists() and include_gallery_data:
         shutil.copyfile(GALLERY_ZIP, gallery_zip_bak)
     print('    - made backups')
 
@@ -82,18 +82,19 @@ def pull():
     print('    - copied zotero database and better bibtex database')
 
     # copy gallery database and gallery images
-    sync_paths = get_gallery_sync_attachment_paths()
-    if sync_paths is not None:
-        shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
-        shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
-        print('    - copied gallery database and archive')
+    if include_gallery_data:
+        sync_paths = get_gallery_sync_attachment_paths()
+        if sync_paths is not None:
+            shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
+            shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
+            print('    - copied gallery database and archive')
 
-        # extract/unpack gallery image archive
-        unpack()
-        print('    - extracted gallery archive')
-    else:
-        print('    - failed to copy gallery database and archive')
-        print('    - failed to extract gallery archive')
+            # extract/unpack gallery image archive
+            unpack()
+            print('    - extracted gallery archive')
+        else:
+            print('    - failed to copy gallery database and archive')
+            print('    - failed to extract gallery archive')
 
 
 def push():
@@ -245,6 +246,10 @@ def extract_images():
     Extract all images from every new publication in the Zotero database and
     place all images in the images/* folder.
     '''
+    # if main zotero database doesn't exist, pull from the zotero directory
+    if not ZOTERO_GALLERY_DB.exists() or not BBT_GALLERY_DB.exists():
+        pull(False)
+
     # Pretend to be a Flask app
     with app.app_context():
         # Set up Better BibTeX
