@@ -185,7 +185,7 @@ def pack():
             pub_path = PUBS_FOLDER.joinpath(pub_key)
 
             # find actual image index and get nth image
-            res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemKey = "{pub_key}"')
+            res = cur_gallery.execute(f'SELECT previewImageIndex FROM gallery WHERE itemBibTexKey = "{pub_key}"')
             try:
                 (img_index, ) = res.fetchone()
             except TypeError:
@@ -201,7 +201,7 @@ def pack():
                 if i != img_index:
                     img_path = pub_path.joinpath(img)
                     os.unlink(img_path)
-                    cur_gallery.execute(f'UPDATE gallery SET previewImageIndex = {PREVIEW_INDEX_PACKED} WHERE itemKey = "{pub_key}"')
+                    cur_gallery.execute(f'UPDATE gallery SET previewImageIndex = {PREVIEW_INDEX_PACKED} WHERE itemBibTexKey = "{pub_key}"')
                     imgs_removed += 1
 
         con_gallery.commit()
@@ -253,22 +253,19 @@ def extract_images():
     # Pretend to be a Flask app
     with app.app_context():
         # Set up Better BibTeX
-        # better bibtex just shoves stuff in JSON...
-        con_bbt = get_bbt_db()
-        cur_bbt = con_bbt.cursor()
-        better_bibtex = cur_bbt.execute('SELECT * FROM "better-bibtex" WHERE name = "better-bibtex.citekey"')
-        name, json_bibtex = better_bibtex.fetchone()
-        bibtex = json.loads(json_bibtex)['data']
+        bibtex = get_bbt_json()
 
         # main zotero cursor
         con_zotero = get_zotero_db()
         cur_zotero = con_zotero.cursor()
 
         # Connect to gallery and set up `gallery` table if not done already
+        # The zotero_id is not consistent between machines, so use bibtex key to
+        # identify publications instead
         con_gallery = get_gallery_db()
         cur_gallery = con_gallery.cursor()
         try:
-            cur_gallery.execute('CREATE TABLE gallery (itemKey TEXT PRIMARY KEY NOT NULL, previewImageIndex INT DEFAULT 0, zoteroItemID INT);')
+            cur_gallery.execute('CREATE TABLE gallery (itemBibTexKey TEXT PRIMARY KEY NOT NULL, previewImageIndex INT DEFAULT 0);')
         except sqlite3.OperationalError:
             pass
 
@@ -300,7 +297,7 @@ def extract_images():
                 attachment_path = get_attachment_path(attachment_key, attachment_file)
                 # Create db entry
                 try:
-                    cur_gallery.execute(f'INSERT INTO gallery (itemKey, zoteroItemID) VALUES ("{bbt_key}", {item_id});')
+                    cur_gallery.execute(f'INSERT INTO gallery (itemBibTexKey) VALUES ("{bbt_key}");')
                     con_gallery.commit()
                     print('Inserted key', bbt_key, 'into gallery database, zotero id', item_id)
                 except sqlite3.IntegrityError:
@@ -341,6 +338,15 @@ def get_bbt_db():
         g.bbt_db = sqlite3.connect('file:' + str(BBT_GALLERY_DB) + '?mode=ro', uri=True)
     return g.bbt_db
 
+def get_bbt_json():
+    # better bibtex just shoves stuff in JSON...
+    con_bbt = get_bbt_db()
+    cur_bbt = con_bbt.cursor()
+    better_bibtex = cur_bbt.execute('SELECT * FROM "better-bibtex" WHERE name = "better-bibtex.citekey"')
+    name, json_bibtex = better_bibtex.fetchone()
+    bibtex = json.loads(json_bibtex)['data']
+    return bibtex
+
 @app.teardown_appcontext
 def close_connection(exception):
     if exception is not None:
@@ -378,6 +384,7 @@ def get_publications():
     # Set up databases
     cur_gallery = get_gallery_db().cursor()
     cur_zotero = get_zotero_db().cursor()
+    bibtex = get_bbt_json()
 
     # Get tag list and field list for decoding tagIDs/fieldIDs later
     tags = get_tags()
@@ -388,14 +395,25 @@ def get_publications():
     publications = {}
     for pub_key in pub_keys:
         pub_data = {}
-        # Query gallery db for information (`zoteroItemID`, `previewImageIndex`)
-        gallery_result = cur_gallery.execute(f'SELECT zoteroItemID, previewImageIndex FROM gallery WHERE itemKey = "{pub_key}"')
-        zotero_id, preview_index = gallery_result.fetchone()
+        # Query gallery db for information `previewImageIndex`, based on bibtex
+        # key (zotero ID not used because it's inconsistent across different
+        # zotero installations)
+        gallery_result = cur_gallery.execute(f'SELECT itemBibTexKey, previewImageIndex FROM gallery WHERE itemBibTexKey = "{pub_key}"')
+        bibtex_key, preview_index = gallery_result.fetchone()
+        assert bibtex_key == pub_key
+
+        # look up zotero ID on this computer based on bibtex key
+        try:
+            zotero_id = next(filter(lambda k: k['citekey'] == pub_key, bibtex))['itemID']
+        except StopIteration:
+            print('Warning: unable to find key `{}` in Better BibTex database - skipping'.format(pub_key))
+            continue
+
         pub_data['zoteroItemID'] = zotero_id
         pub_data['previewImageIndex'] = preview_index
 
         # Get `images` list
-        pub_folder = PUBS_FOLDER.joinpath(pub_key)
+        pub_folder = PUBS_FOLDER.joinpath(pub_key).relative_to(PUBS_FOLDER.parent)
         img_list = []
         for img in sorted(os.listdir(pub_folder)):
             img_list.append(pub_folder.joinpath(img).as_posix())
@@ -434,24 +452,24 @@ def get_publications():
     return publications
 
 def get_img_preview_indices():
-    pub_keys = get_gallery_db().cursor().execute('SELECT itemKey, previewImageIndex FROM gallery')
+    pub_keys = get_gallery_db().cursor().execute('SELECT itemBibTexKey, previewImageIndex FROM gallery')
     indices = {}
     for key, index in pub_keys.fetchall():
         indices[key] = index
     return indices
 
 # Flask Routes
-@app.route('/api/incrementImageIndex/<string:itemKey>/<int:increase>', methods=['POST'])
-def increment_img_index(itemKey, increase):
+@app.route('/api/incrementImageIndex/<string:itemBibTexKey>/<int:increase>', methods=['POST'])
+def increment_img_index(itemBibTexKey, increase):
     value = 1 if increase > 0 else -1
-    current_value = get_img_preview_indices()[itemKey]
-    max_value = len(get_publications()[itemKey]['images'])
+    current_value = get_img_preview_indices()[itemBibTexKey]
+    max_value = len(get_publications()[itemBibTexKey]['images'])
     new_index = max(0, min(current_value + value, max_value))
     db = get_gallery_db()
-    db.cursor().execute(f'UPDATE gallery SET previewImageIndex = {new_index} WHERE itemKey = "{itemKey}"')
+    db.cursor().execute(f'UPDATE gallery SET previewImageIndex = {new_index} WHERE itemBibTexKey = "{itemBibTexKey}"')
     db.commit()
 
-    out = f'Index for {itemKey} is now {new_index}'
+    out = f'Index for {itemBibTexKey} is now {new_index}'
     print(out)
     return out
 
@@ -478,7 +496,7 @@ def remove_entry(entry_key):
     with app.app_context():
         con_gallery = get_gallery_db()
         cur_gallery = con_gallery.cursor()
-        cur_gallery.execute(f'DELETE FROM gallery WHERE itemKey = "{entry_key}"')
+        cur_gallery.execute(f'DELETE FROM gallery WHERE itemBibTexKey = "{entry_key}"')
         con_gallery.commit()
         print('removed entry', entry_key, 'from gallery database')
 
