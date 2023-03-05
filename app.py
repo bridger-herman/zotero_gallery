@@ -25,7 +25,7 @@ BBT_SRC_DB = ZOTERO_DATA_DIR.joinpath(BBT_DB_NAME)
 ZOTERO_GALLERY_DB = GALLERY_DATA_DIR.joinpath(ZOTERO_DB_NAME)
 BBT_GALLERY_DB = GALLERY_DATA_DIR.joinpath(BBT_DB_NAME)
 
-ZOTERO_GALLERY_COLLECTION_NAME = '_GalleryTest'
+ZOTERO_GALLERY_COLLECTION_NAME = '_Gallery'
 GALLERY_DB = GALLERY_DATA_DIR.joinpath('gallery' + ZOTERO_GALLERY_COLLECTION_NAME + '.sqlite')
 STORAGE = 'storage/'
 STORAGE_DB = 'storage:'
@@ -36,7 +36,7 @@ if not PUBS_FOLDER.exists():
 PUBS_FOLDER = PUBS_FOLDER.resolve()
 PREVIEW_INDEX_PACKED = -1
 
-GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery.zip')
+GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery' + ZOTERO_GALLERY_COLLECTION_NAME + '.zip')
 SYNC_PUB_TAG = 'z_Gallery_Sync_Placeholder'
 
 EXTRACTORS = {
@@ -85,9 +85,12 @@ def pull(include_gallery_data=True):
     if include_gallery_data:
         sync_paths = get_gallery_sync_attachment_paths()
         if sync_paths is not None:
-            shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
-            shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
-            print('    - copied gallery database and archive')
+            if sync_paths[GALLERY_DB.name] is not None:
+                shutil.copyfile(sync_paths[GALLERY_DB.name], GALLERY_DB)
+                print('    - copied gallery database')
+            if sync_paths[GALLERY_ZIP.name] is not None:
+                shutil.copyfile(sync_paths[GALLERY_ZIP.name], GALLERY_ZIP)
+                print('    - copied image archive')
 
             # extract/unpack gallery image archive
             unpack()
