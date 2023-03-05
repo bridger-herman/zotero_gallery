@@ -25,12 +25,15 @@ BBT_SRC_DB = ZOTERO_DATA_DIR.joinpath(BBT_DB_NAME)
 ZOTERO_GALLERY_DB = GALLERY_DATA_DIR.joinpath(ZOTERO_DB_NAME)
 BBT_GALLERY_DB = GALLERY_DATA_DIR.joinpath(BBT_DB_NAME)
 
-GALLERY_DB = GALLERY_DATA_DIR.joinpath('gallery.sqlite')
+ZOTERO_GALLERY_COLLECTION_NAME = '_GalleryTest'
+GALLERY_DB = GALLERY_DATA_DIR.joinpath('gallery' + ZOTERO_GALLERY_COLLECTION_NAME + '.sqlite')
 STORAGE = 'storage/'
 STORAGE_DB = 'storage:'
 STORAGE_DIR = ZOTERO_DATA_DIR.joinpath(STORAGE)
-PUBS_FOLDER = Path('images')
-ZOTERO_GALLERY_COLLECTION_NAME = '_GalleryTest'
+PUBS_FOLDER = Path('./images')
+if not PUBS_FOLDER.exists():
+    os.makedirs(PUBS_FOLDER)
+PUBS_FOLDER = PUBS_FOLDER.resolve()
 PREVIEW_INDEX_PACKED = -1
 
 GALLERY_ZIP = GALLERY_DATA_DIR.joinpath('gallery.zip')
@@ -44,9 +47,6 @@ EXTRACTORS = {
 FLASK_HOST = '127.0.0.1'
 FLASK_PORT = 5000
 FLASK_DEBUG = True
-
-if not PUBS_FOLDER.exists():
-    os.makedirs(PUBS_FOLDER)
 
 # Flask web app
 app = Flask(__name__, static_folder='images')
@@ -496,6 +496,7 @@ pack:       pack all images into a single zip file and get rid of all images
             that aren't the single one we're displaying on the gallery.
 unpack:     unpack gallery.zip file into the images folder
 remove <entry_key>: remove the bibtex entry key from the database and images gallery
+clean:      remove ALL extracted images, databases, etc. Does not modify Zotero sync.
 '''
     print(app_help)
 
@@ -535,6 +536,13 @@ if __name__ == '__main__':
         else:
             print_help()
             exit(1)
+
+    elif 'clean' in sys.argv:
+        folders_to_remove = [GALLERY_DATA_DIR, PUBS_FOLDER]
+        if input('Are you sure you want to remove the folders {}? (y/n): '.format(folders_to_remove)).lower() == 'y':
+            for folder in folders_to_remove:
+                shutil.rmtree(folder)
+                print('Removed folder', folder)
 
     elif 'run' in sys.argv:
         debug = 'debug' in sys.argv
