@@ -96,10 +96,10 @@
                 'hideArrows': pubData['previewImageIndex'] < 0 ? 'hidden' : '',
             });
 
-            let display = true;
+            let display = false;
             for (const tag of selectedTags) {
-                if (pubData['tags'].indexOf(tag) < 0) {
-                    display = false;
+                if (pubData['tags'].indexOf(tag) >= 0) {
+                    display = true;
                 }
             }
             if (display) {
@@ -128,7 +128,7 @@
         sortedTags.sort();
         for (const tag of sortedTags) {
             if (typeof(tagFilter[tag]) === 'undefined')
-                tagFilter[tag] = false;
+                tagFilter[tag] = true;
 
             let instance = instantiateTemplate(tagTemplate, {
                 'tagName': tag
